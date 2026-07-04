@@ -2,6 +2,7 @@
 name = "betapp-dutching"
 version = "0.1.0"
 description = "Backend utilitario para calculo de dutching em apostas combinadas."
+package-mode = false
 requires-python = ">=3.10"
 dependencies = [
     "streamlit>=1.32",
