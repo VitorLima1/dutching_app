@@ -1,0 +1,64 @@
+{
+  "banca_total": 10.00,
+  "minimo_por_bilhete": 0.50,
+  "jogos": [
+    {
+      "id": "jogo_1",
+      "mandante": "Canadá",
+      "visitante": "Marrocos",
+      "odds": {
+        "1": 5.50,
+        "X": 3.50,
+        "2": 1.72
+      }
+    },
+    {
+      "id": "jogo_2",
+      "mandante": "Paraguai",
+      "visitante": "França",
+      "odds": {
+        "1": 17.00,
+        "X": 7.00,
+        "2": 1.16
+      }
+    }
+  ],
+  "duplas_escolhidas": [
+    {
+      "jogo_1": "1",
+      "jogo_2": "1"
+    },
+    {
+      "jogo_1": "1",
+      "jogo_2": "X"
+    },
+    {
+      "jogo_1": "1",
+      "jogo_2": "2"
+    },
+    {
+      "jogo_1": "X",
+      "jogo_2": "1"
+    },
+    {
+      "jogo_1": "X",
+      "jogo_2": "X"
+    },
+    {
+      "jogo_1": "X",
+      "jogo_2": "2"
+    },
+    {
+      "jogo_1": "2",
+      "jogo_2": "1"
+    },
+    {
+      "jogo_1": "2",
+      "jogo_2": "X"
+    },
+    {
+      "jogo_1": "2",
+      "jogo_2": "2"
+    }
+  ]
+}

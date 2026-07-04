@@ -1,0 +1,11 @@
+[project]
+name = "betapp-dutching"
+version = "0.1.0"
+description = "Backend utilitario para calculo de dutching em apostas combinadas."
+requires-python = ">=3.10"
+dependencies = [
+    "streamlit>=1.32",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
