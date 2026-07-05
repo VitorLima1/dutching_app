@@ -2,22 +2,28 @@ from __future__ import annotations
 
 import unittest
 
-from app_web import chave_dupla, filtrar_duplas_marcadas, gerar_duplas_possiveis, montar_payload_calculo
+from app_web import (
+    chave_dupla,
+    filtrar_duplas_marcadas,
+    gerar_duplas_possiveis,
+    label_dupla,
+    montar_payload_calculo,
+)
 
 
 def jogos_exemplo() -> list[dict]:
     return [
         {
             "id": "jogo_1",
-            "mandante": "Canada",
-            "visitante": "Marrocos",
-            "odds": {"1": 5.50, "X": 3.50, "2": 1.72},
+            "mandante": "Brasil",
+            "visitante": "Noruega",
+            "odds": {"1": 1.80, "X": 3.70, "2": 4.50},
         },
         {
             "id": "jogo_2",
-            "mandante": "Paraguai",
-            "visitante": "Franca",
-            "odds": {"1": 17.00, "X": 7.00, "2": 1.16},
+            "mandante": "México",
+            "visitante": "Inglaterra",
+            "odds": {"1": 3.10, "X": 3.20, "2": 2.40},
         },
     ]
 
@@ -30,6 +36,18 @@ class AppWebCombinacoesTest(unittest.TestCase):
         self.assertEqual(duplas[0], {"jogo_1": "1", "jogo_2": "1"})
         self.assertEqual(duplas[-1], {"jogo_1": "2", "jogo_2": "2"})
         self.assertIn({"jogo_1": "X", "jogo_2": "X"}, duplas)
+
+    def test_label_exibe_novas_selecoes_e_odd_combinada(self) -> None:
+        jogos = jogos_exemplo()
+        duplas = gerar_duplas_possiveis(jogos)
+        jogos_por_id = {jogo["id"]: jogo for jogo in jogos}
+
+        label = label_dupla(duplas[2], jogos_por_id)
+
+        self.assertEqual(
+            label,
+            "Brasil vence (1.80) + Inglaterra vence (2.40) | Odd combinada: 4.32",
+        )
 
     def test_payload_envia_exatamente_duplas_marcadas(self) -> None:
         payload_base = {"jogos": jogos_exemplo()}
