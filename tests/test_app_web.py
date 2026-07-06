@@ -15,15 +15,15 @@ def jogos_exemplo() -> list[dict]:
     return [
         {
             "id": "jogo_1",
-            "mandante": "Brasil",
-            "visitante": "Noruega",
-            "odds": {"1": 1.80, "X": 3.70, "2": 4.50},
+            "mandante": "Portugal",
+            "visitante": "Espanha",
+            "odds": {"1": 4.10, "X": 3.50, "2": 1.90},
         },
         {
             "id": "jogo_2",
-            "mandante": "México",
-            "visitante": "Inglaterra",
-            "odds": {"1": 3.10, "X": 3.20, "2": 2.40},
+            "mandante": "EUA",
+            "visitante": "Bélgica",
+            "odds": {"1": 2.35, "X": 3.50, "2": 2.90},
         },
     ]
 
@@ -42,11 +42,11 @@ class AppWebCombinacoesTest(unittest.TestCase):
         duplas = gerar_duplas_possiveis(jogos)
         jogos_por_id = {jogo["id"]: jogo for jogo in jogos}
 
-        label = label_dupla(duplas[2], jogos_por_id)
+        label = label_dupla(duplas[1], jogos_por_id)
 
         self.assertEqual(
             label,
-            "Brasil vence (1.80) + Inglaterra vence (2.40) | Odd combinada: 4.32",
+            "Portugal vence (4.10) + EUA x Bélgica empata (3.50) | Odd combinada: 14.35",
         )
 
     def test_payload_envia_exatamente_duplas_marcadas(self) -> None:

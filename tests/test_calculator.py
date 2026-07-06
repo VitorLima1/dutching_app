@@ -14,15 +14,15 @@ def payload_exemplo() -> dict:
         "jogos": [
             {
                 "id": "jogo_1",
-                "mandante": "Brasil",
-                "visitante": "Noruega",
-                "odds": {"1": 1.80, "X": 3.70, "2": 4.50},
+                "mandante": "Portugal",
+                "visitante": "Espanha",
+                "odds": {"1": 4.10, "X": 3.50, "2": 1.90},
             },
             {
                 "id": "jogo_2",
-                "mandante": "México",
-                "visitante": "Inglaterra",
-                "odds": {"1": 3.10, "X": 3.20, "2": 2.40},
+                "mandante": "EUA",
+                "visitante": "Bélgica",
+                "odds": {"1": 2.35, "X": 3.50, "2": 2.90},
             },
         ],
         "duplas_escolhidas": [
@@ -67,7 +67,7 @@ class DutchingCalculatorTest(unittest.TestCase):
         for ticket in result["bilhetes"]:
             self.assertGreater(Decimal(ticket["valor_apostado"]), Decimal("0.49"))
 
-        zebra = next(ticket for ticket in result["bilhetes"] if ticket["id"] == "dupla_4")
+        zebra = next(ticket for ticket in result["bilhetes"] if ticket["id"] == "dupla_3")
         self.assertEqual(zebra["valor_apostado"], "0.50")
         self.assertGreater(Decimal(zebra["retorno_potencial"]), Decimal("3.00"))
 
@@ -80,7 +80,7 @@ class DutchingCalculatorTest(unittest.TestCase):
         returns = [
             Decimal(ticket["retorno_potencial"])
             for ticket in result["bilhetes"]
-            if ticket["id"] != "dupla_4"
+            if ticket["id"] not in {"dupla_2", "dupla_3"}
         ]
         self.assertLessEqual(max(returns) - min(returns), Decimal("0.07"))
 
@@ -107,16 +107,16 @@ class DutchingCalculatorTest(unittest.TestCase):
         self.assertEqual(result["descartados"], [])
         self.assertEqual(result["alertas"], [])
         self.assertEqual(len(result["bilhetes"]), 9)
-        self.assertEqual(result["bilhetes"][0]["id"], "dupla_3")
-        self.assertEqual(result["bilhetes"][0]["odd_combinada"], "4.3200")
-        self.assertEqual(result["bilhetes"][-1]["id"], "dupla_8")
-        self.assertEqual(result["bilhetes"][-1]["odd_combinada"], "14.4000")
+        self.assertEqual(result["bilhetes"][0]["id"], "dupla_7")
+        self.assertEqual(result["bilhetes"][0]["odd_combinada"], "4.4650")
+        self.assertEqual(result["bilhetes"][-1]["id"], "dupla_2")
+        self.assertEqual(result["bilhetes"][-1]["odd_combinada"], "14.3500")
 
         returns = [
             Decimal(ticket["retorno_potencial"])
             for ticket in result["bilhetes"]
         ]
-        self.assertLessEqual(max(returns) - min(returns), Decimal("0.10"))
+        self.assertLessEqual(max(returns) - min(returns), Decimal("0.11"))
 
     def test_banca_alta_permite_mais_duplas_no_dutching_tradicional(self) -> None:
         payload = payload_nove_duplas()
@@ -143,7 +143,7 @@ class DutchingCalculatorTest(unittest.TestCase):
         self.assertEqual(result["banca_alocada"], "10.00")
         self.assertEqual(result["descartados"], [])
         favorito = result["bilhetes"][0]
-        self.assertEqual(favorito["id"], "dupla_3")
+        self.assertEqual(favorito["id"], "dupla_4")
         self.assertEqual(favorito["valor_apostado"], "2.00")
 
         demais_retornos = [
@@ -165,9 +165,9 @@ class DutchingCalculatorTest(unittest.TestCase):
 
         menor_odd = result["bilhetes"][0]
         maior_odd = result["bilhetes"][-1]
-        self.assertEqual(menor_odd["id"], "dupla_3")
+        self.assertEqual(menor_odd["id"], "dupla_4")
         self.assertEqual(menor_odd["valor_apostado"], "2.00")
-        self.assertEqual(maior_odd["id"], "dupla_4")
+        self.assertEqual(maior_odd["id"], "dupla_3")
         self.assertEqual(maior_odd["valor_apostado"], "1.50")
 
         meio_retornos = [

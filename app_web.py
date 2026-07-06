@@ -24,7 +24,7 @@ def descrever_resultado(jogo: dict[str, Any], resultado: str) -> str:
     if resultado == "1":
         return f"{jogo['mandante']} vence"
     if resultado.upper() == "X":
-        return "Empate"
+        return f"{jogo['mandante']} x {jogo['visitante']} empata"
     if resultado == "2":
         return f"{jogo['visitante']} vence"
     return resultado
