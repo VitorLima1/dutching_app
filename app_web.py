@@ -14,6 +14,7 @@ from dutching import DutchingValidationError, calcular_dutching
 ROOT_DIR = Path(__file__).resolve().parent
 PAYLOAD_EXEMPLO = ROOT_DIR / "examples" / "payload_exemplo.json"
 ORDEM_RESULTADOS = ("1", "X", "2")
+CENT = Decimal("0.01")
 
 
 def carregar_payload_exemplo() -> dict[str, Any]:
@@ -65,6 +66,37 @@ def label_dupla(dupla: dict[str, str], jogos_por_id: dict[str, dict[str, Any]]) 
     return f"{' + '.join(partes)} | Odd combinada: {odd_combinada:.2f}"
 
 
+def odd_combinada_dupla(dupla: dict[str, str], jogos_por_id: dict[str, dict[str, Any]]) -> Decimal:
+    odd_combinada = Decimal("1")
+    for jogo_id, resultado in dupla.items():
+        odd_combinada *= Decimal(str(jogos_por_id[jogo_id]["odds"][resultado]))
+    return odd_combinada
+
+
+def montar_df_calculo(
+    duplas: list[dict[str, str]],
+    jogos_por_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return sorted(
+        [
+            {
+                "dupla": dupla,
+                "odd_combinada": odd_combinada_dupla(dupla, jogos_por_id),
+            }
+            for dupla in duplas
+        ],
+        key=lambda linha: linha["odd_combinada"],
+        reverse=True,
+    )
+
+
+def ordenar_duplas_por_odd_decrescente(
+    duplas: list[dict[str, str]],
+    jogos_por_id: dict[str, dict[str, Any]],
+) -> list[dict[str, str]]:
+    return [linha["dupla"] for linha in montar_df_calculo(duplas, jogos_por_id)]
+
+
 def chave_dupla(index: int, dupla: dict[str, str]) -> str:
     partes = [f"{jogo_id}:{resultado}" for jogo_id, resultado in dupla.items()]
     return f"dupla_{index}_{'_'.join(partes)}"
@@ -108,6 +140,69 @@ def lucro_minimo(bilhetes: list[dict[str, Any]]) -> Decimal:
     return min(Decimal(str(bilhete["lucro_sobre_banca"])) for bilhete in bilhetes)
 
 
+def montar_travas_pre_alocadas(
+    df_calculo: list[dict[str, Any]],
+    banca_total: float,
+    valor_travado_maior_odd: float = 0.0,
+    valor_travado_segunda_maior_odd: float = 0.0,
+    valor_travado_menor_odd: float = 0.0,
+) -> tuple[list[dict[str, Any]], Decimal, str | None]:
+    banca_disponivel = Decimal(f"{banca_total:.2f}")
+    travas: list[dict[str, Any]] = []
+    duplas_travadas: set[tuple[tuple[str, str], ...]] = set()
+
+    def registrar_trava(dupla: dict[str, str], valor: float, rotulo: str) -> Decimal:
+        valor_decimal = Decimal(f"{valor:.2f}").quantize(CENT)
+        if valor_decimal <= 0:
+            return Decimal("0")
+
+        chave = tuple(sorted(dupla.items()))
+        if chave in duplas_travadas:
+            return Decimal("0")
+
+        duplas_travadas.add(chave)
+        travas.append(
+            {
+                "selecoes": dupla,
+                "valor": f"{valor_decimal:.2f}",
+                "rotulo": rotulo,
+            }
+        )
+        return valor_decimal
+
+    if valor_travado_maior_odd > 0:
+        banca_disponivel -= registrar_trava(
+            df_calculo[0]["dupla"],
+            valor_travado_maior_odd,
+            "maior odd",
+        )
+
+    if valor_travado_segunda_maior_odd > 0:
+        if len(df_calculo) < 2:
+            return (
+                travas,
+                banca_disponivel,
+                "Valor travado na segunda maior odd requer pelo menos dois bilhetes selecionados.",
+            )
+        banca_disponivel -= registrar_trava(
+            df_calculo[1]["dupla"],
+            valor_travado_segunda_maior_odd,
+            "segunda maior odd",
+        )
+
+    if valor_travado_menor_odd > 0:
+        banca_disponivel -= registrar_trava(
+            df_calculo[-1]["dupla"],
+            valor_travado_menor_odd,
+            "menor odd",
+        )
+
+    if banca_disponivel < 0:
+        return travas, banca_disponivel, "Valores travados ultrapassam a banca total."
+
+    return travas, banca_disponivel, None
+
+
 def montar_payload_calculo(
     payload_base: dict[str, Any],
     banca_total: float,
@@ -115,12 +210,16 @@ def montar_payload_calculo(
     duplas_escolhidas: list[dict[str, str]],
     valor_travado_menor_odd: float = 0.0,
     valor_travado_maior_odd: float = 0.0,
+    valor_travado_segunda_maior_odd: float = 0.0,
+    apostas_travadas: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "banca_total": f"{banca_total:.2f}",
         "minimo_por_bilhete": f"{minimo_por_bilhete:.2f}",
         "valor_travado_menor_odd": f"{valor_travado_menor_odd:.2f}",
         "valor_travado_maior_odd": f"{valor_travado_maior_odd:.2f}",
+        "valor_travado_segunda_maior_odd": f"{valor_travado_segunda_maior_odd:.2f}",
+        "apostas_travadas": apostas_travadas or [],
         "jogos": payload_base["jogos"],
         "duplas_escolhidas": duplas_escolhidas,
     }
@@ -204,6 +303,13 @@ def main() -> None:
             step=0.50,
             format="%.2f",
         )
+        valor_travado_segunda_maior_odd = st.number_input(
+            "Travar Valor na segunda Maior Odd (Opcional)",
+            min_value=0.00,
+            value=0.00,
+            step=0.01,
+            format="%.2f",
+        )
 
     exibir_jogos(jogos)
 
@@ -233,13 +339,29 @@ def main() -> None:
         st.warning("Selecione pelo menos uma dupla para calcular.")
         return
 
+    df_calculo = montar_df_calculo(duplas_selecionadas, jogos_por_id)
+    duplas_para_calculo = [linha["dupla"] for linha in df_calculo]
+    apostas_travadas, _banca_disponivel, erro_travas = montar_travas_pre_alocadas(
+        df_calculo,
+        banca_total,
+        valor_travado_maior_odd,
+        valor_travado_segunda_maior_odd,
+        valor_travado_menor_odd,
+    )
+
+    if erro_travas is not None:
+        st.warning(erro_travas)
+        return
+
     payload_calculo = montar_payload_calculo(
         payload_base,
         banca_total,
         minimo_por_bilhete,
-        duplas_selecionadas,
+        duplas_para_calculo,
         valor_travado_menor_odd,
         valor_travado_maior_odd,
+        valor_travado_segunda_maior_odd,
+        apostas_travadas,
     )
 
     try:

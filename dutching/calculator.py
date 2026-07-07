@@ -64,19 +64,37 @@ def calcular_dutching(payload: Mapping[str, Any]) -> dict[str, Any]:
         payload.get("valor_travado_maior_odd", Decimal("0")),
         "valor_travado_maior_odd",
     )
+    fixed_second_highest_odd_stake = _decimal(
+        payload.get("valor_travado_segunda_maior_odd", Decimal("0")),
+        "valor_travado_segunda_maior_odd",
+    )
 
     _validate_positive_money(bank, "banca_total")
     _validate_positive_money(minimum_stake, "minimo_por_bilhete")
     _validate_positive_money(increment, "incremento_aposta")
     _validate_non_negative_money(fixed_lowest_odd_stake, "valor_travado_menor_odd")
     _validate_non_negative_money(fixed_highest_odd_stake, "valor_travado_maior_odd")
+    _validate_non_negative_money(
+        fixed_second_highest_odd_stake,
+        "valor_travado_segunda_maior_odd",
+    )
     _ensure_multiple(bank, increment, "banca_total")
     _ensure_multiple(minimum_stake, increment, "minimo_por_bilhete")
     _ensure_multiple(fixed_lowest_odd_stake, increment, "valor_travado_menor_odd")
     _ensure_multiple(fixed_highest_odd_stake, increment, "valor_travado_maior_odd")
+    _ensure_multiple(
+        fixed_second_highest_odd_stake,
+        increment,
+        "valor_travado_segunda_maior_odd",
+    )
 
     games = _parse_games(payload.get("jogos"))
     tickets = _parse_tickets(payload.get("duplas_escolhidas"), games)
+    fixed_ticket_requests = _parse_fixed_stake_requests(
+        payload.get("apostas_travadas", []),
+        tickets,
+        increment,
+    )
     result = _allocate(
         bank,
         minimum_stake,
@@ -84,6 +102,8 @@ def calcular_dutching(payload: Mapping[str, Any]) -> dict[str, Any]:
         tickets,
         fixed_lowest_odd_stake,
         fixed_highest_odd_stake,
+        fixed_second_highest_odd_stake,
+        fixed_ticket_requests,
     )
     return _serialize_result(bank, minimum_stake, increment, result)
 
@@ -176,6 +196,59 @@ def _parse_tickets(raw_tickets: Any, games: Mapping[str, Game]) -> list[Ticket]:
     return tickets
 
 
+def _parse_fixed_stake_requests(
+    raw_fixed_stakes: Any,
+    tickets: list[Ticket],
+    increment: Decimal,
+) -> list[tuple[Ticket, Decimal, str]]:
+    if raw_fixed_stakes in (None, []):
+        return []
+    if not isinstance(raw_fixed_stakes, list):
+        raise DutchingValidationError("'apostas_travadas' deve ser uma lista.")
+
+    tickets_by_selection = {
+        _selection_key(ticket.selections): ticket
+        for ticket in tickets
+    }
+    seen_selections: set[tuple[tuple[str, str], ...]] = set()
+    requests: list[tuple[Ticket, Decimal, str]] = []
+
+    for index, raw_fixed_stake in enumerate(raw_fixed_stakes, start=1):
+        if not isinstance(raw_fixed_stake, Mapping):
+            raise DutchingValidationError(f"apostas_travadas[{index}] deve ser um objeto.")
+
+        raw_selections = raw_fixed_stake.get("selecoes")
+        if not isinstance(raw_selections, Mapping) or not raw_selections:
+            raise DutchingValidationError(
+                f"apostas_travadas[{index}].selecoes deve ser um objeto nao vazio."
+            )
+
+        selection_key = _selection_key(
+            {str(game_id): str(outcome) for game_id, outcome in raw_selections.items()}
+        )
+        ticket = tickets_by_selection.get(selection_key)
+        if ticket is None:
+            raise DutchingValidationError(
+                f"apostas_travadas[{index}] referencia dupla nao selecionada."
+            )
+        if selection_key in seen_selections:
+            raise DutchingValidationError(
+                f"apostas_travadas[{index}] duplica uma dupla ja travada."
+            )
+
+        amount = _decimal(raw_fixed_stake.get("valor"), f"apostas_travadas[{index}].valor")
+        _validate_non_negative_money(amount, f"apostas_travadas[{index}].valor")
+        _ensure_multiple(amount, increment, f"apostas_travadas[{index}].valor")
+        if amount <= 0:
+            continue
+
+        seen_selections.add(selection_key)
+        label = str(raw_fixed_stake.get("rotulo", f"aposta travada {index}"))
+        requests.append((ticket, amount, label))
+
+    return requests
+
+
 def _allocate(
     bank: Decimal,
     minimum_stake: Decimal,
@@ -183,6 +256,8 @@ def _allocate(
     tickets: list[Ticket],
     fixed_lowest_odd_stake: Decimal = Decimal("0"),
     fixed_highest_odd_stake: Decimal = Decimal("0"),
+    fixed_second_highest_odd_stake: Decimal = Decimal("0"),
+    fixed_ticket_requests: list[tuple[Ticket, Decimal, str]] | None = None,
 ) -> dict[str, Any]:
     active = sorted(tickets, key=lambda ticket: ticket.combined_odd)
     bank_units = _to_units_floor(bank, increment)
@@ -190,31 +265,50 @@ def _allocate(
     fixed_units_by_id: dict[str, int] = {}
     flexible = active.copy()
 
-    fixed_error = _apply_fixed_stake(
-        ticket=active[0],
-        amount=fixed_lowest_odd_stake,
-        field_label="menor odd",
-        bank_units=bank_units,
-        minimum_units=minimum_units,
-        increment=increment,
-        fixed_units_by_id=fixed_units_by_id,
-        flexible=flexible,
-    )
-    if fixed_error is not None:
-        return fixed_error
+    explicit_label_keys = {
+        _fixed_label_key(field_label)
+        for _, _, field_label in fixed_ticket_requests or []
+    }
 
-    fixed_error = _apply_fixed_stake(
-        ticket=active[-1],
-        amount=fixed_highest_odd_stake,
-        field_label="maior odd",
-        bank_units=bank_units,
-        minimum_units=minimum_units,
-        increment=increment,
-        fixed_units_by_id=fixed_units_by_id,
-        flexible=flexible,
-    )
-    if fixed_error is not None:
-        return fixed_error
+    if (
+        fixed_second_highest_odd_stake > 0
+        and "segunda maior odd" not in explicit_label_keys
+        and len(active) < 2
+    ):
+        return {
+            "viavel": False,
+            "allocations": [],
+            "discarded": [],
+            "alerts": [
+                "Valor travado na segunda maior odd requer pelo menos dois bilhetes selecionados."
+            ],
+        }
+
+    fixed_requests = list(fixed_ticket_requests or [])
+    legacy_fixed_requests = [
+        (active[0], fixed_lowest_odd_stake, "menor odd"),
+        (active[-1], fixed_highest_odd_stake, "maior odd"),
+    ]
+    if fixed_second_highest_odd_stake > 0 and "segunda maior odd" not in explicit_label_keys:
+        legacy_fixed_requests.append((active[-2], fixed_second_highest_odd_stake, "segunda maior odd"))
+
+    for legacy_request in legacy_fixed_requests:
+        if _fixed_label_key(legacy_request[2]) not in explicit_label_keys:
+            fixed_requests.append(legacy_request)
+
+    for ticket, amount, field_label in fixed_requests:
+        fixed_error = _apply_fixed_stake(
+            ticket=ticket,
+            amount=amount,
+            field_label=field_label,
+            bank_units=bank_units,
+            minimum_units=minimum_units,
+            increment=increment,
+            fixed_units_by_id=fixed_units_by_id,
+            flexible=flexible,
+        )
+        if fixed_error is not None:
+            return fixed_error
 
     required_minimum_units = len(flexible) * minimum_units + sum(fixed_units_by_id.values())
 
@@ -258,6 +352,14 @@ def _allocate(
         flexible.remove(ticket_to_fix)
 
     return _allocation_success(active, fixed_units_by_id)
+
+
+def _selection_key(selections: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted((str(game_id), str(outcome)) for game_id, outcome in selections.items()))
+
+
+def _fixed_label_key(label: str) -> str:
+    return label.strip().lower()
 
 
 def _apply_fixed_stake(
